@@ -23,6 +23,8 @@ import sys
 import datetime
 import geopandas
 from shapely.geometry import Polygon,shape,mapping
+import glob
+import subprocess
 
 def SHPtoList(shp_path):
 	shp=geopandas.read_file(shp_path)#load shapefile
@@ -172,12 +174,12 @@ def CREODIAS_sentinel_download(sat, productType, start_date, end_date, extent, c
 
 def Cloud_remover(path,prop_nuage,liste_des_noms,shp_path):
 	from zipfile import ZipFile
-	import glob
 	import matplotlib.pyplot as plt
 	import codecs
 	import shutil
 	
 	moyenne_nuageuse=[]
+	save=[]
 	suprimer=0
 	prop_nuage=int(prop_nuage)
 	for name in liste_des_noms:
@@ -194,7 +196,6 @@ def Cloud_remover(path,prop_nuage,liste_des_noms,shp_path):
 			else:
 				cloud=geopandas.GeoDataFrame()
 				suprimer=suprimer+1
-				os.remove(path+'/'+name)
 				#os.remove(path+'/'+os.path.splitext(name)[0]+'.SAFE')
 				shutil.rmtree(path+'/'+os.path.splitext(name)[0]+'.SAFE')
 				
@@ -225,12 +226,53 @@ def Cloud_remover(path,prop_nuage,liste_des_noms,shp_path):
 			'''
 			if int(prop) >= prop_nuage:
 				suprimer=suprimer+1
-				os.remove(path+'/'+name)
 				#os.remove(path+'/'+os.path.splitext(name)[0]+'.SAFE')
 				shutil.rmtree(path+'/'+os.path.splitext(name)[0]+'.SAFE')
+			else:
+				save.append(name)
 			moyenne_nuageuse.append(prop)
+		os.remove(path+'/'+name)
 		
-	return moyenne_nuageuse,suprimer
+	return moyenne_nuageuse,suprimer,save
+	
+def otb_concatenate_band_wrapper(in_img_list, out_img, ram):
+    """
+    concatenation bande s2 en uint16
+    """
+    #cmd = ['source', "/home/nicodebo/.local/share/dependencies/otb/otbenv.profile" , '&&', 'otbcli_ConcatenateImages', '-il']
+    cmd = ['otbcli_ConcatenateImages' , '-il']
+    cmd.extend(in_img_list)
+    cmd.extend(['-out', out_img, 'uint16', '-ram', str(ram)])
+    print(" ".join(cmd))
+    subprocess.check_call(" ".join(cmd), shell=True, executable='/bin/bash')
+
+
+def prepare_s2(img_folder, out_dir, ram):
+    """
+    preparation des images full s2
+    img_folder: chemin d'accès des données S2
+    out_dir: chemin ou seront enregistrer les images concatenées
+    """
+    tiles = glob.glob(os.path.join(img_folder, '*.SAFE'))
+    print(tiles)
+    for tile in tiles:
+        outfolder = os.path.join(out_dir)
+        os.makedirs(outfolder, exist_ok=True)
+        prefix = os.path.splitext(os.path.basename(tile))[0]
+        out_img = os.path.join(outfolder, '{}.tif'.format(prefix))
+
+        in_img_list = []
+        in_img_list = glob.glob(os.path.join(tile, '**', '*B02.jp2'), recursive=True)
+        in_img_list += glob.glob(os.path.join(tile, '**', '*B03.jp2'), recursive=True)
+        in_img_list += glob.glob(os.path.join(tile, '**', '*B04.jp2'), recursive=True)
+        in_img_list += glob.glob(os.path.join(tile, '**', '*B08.jp2'), recursive=True)
+
+        if not os.path.isfile(out_img):
+            otb_concatenate_band_wrapper(in_img_list, out_img, ram)
+
+def concat(restants,img_folder):
+    out_dir = img_folder
+    prepare_s2(img_folder, out_dir, ram=256)
 
 if __name__ == '__main__':
     
@@ -317,15 +359,14 @@ if __name__ == '__main__':
     extent=SHPtoList(args.shp_path)
     print(extent)
     date_start,date_end=Curently(args.years)
-    date_start='2019-03-28'
-    date_end='2019-04-04'
+    #date_start='2019-03-28'
+    #date_end='2019-04-04'
     print(date_start,date_end)
     
     liste_des_noms=CREODIAS_sentinel_download(args.sat, args.productType, date_start, date_end, extent, args.cloud_max, args.outFolder, args.IDfile)
-    
-    #liste_des_noms=['S2B_MSIL1C_20190404T105619_N0207_R094_T30TYQ_20190404T131522.zip', 'S2B_MSIL1C_20190401T105029_N0207_R051_T30TYQ_20190401T130525.zip', 'S2A_MSIL1C_20190330T105631_N0207_R094_T30TYQ_20190330T112345.zip', 'S2A_MSIL1C_20190327T105031_N0207_R051_T30TYQ_20190327T143721.zip', 'S2B_MSIL1C_20190325T105709_N0207_R094_T30TYQ_20190325T132135.zip', 'S2B_MSIL1C_20190322T105029_N0207_R051_T30TYQ_20190322T161046.zip', 'S2A_MSIL1C_20190320T105741_N0207_R094_T30TYQ_20190320T144531.zip', 'S2A_MSIL1C_20190320T105741_N0207_R094_T30TYQ_20190320T162256.zip']
-    print(liste_des_noms)
-    moy,sup=Cloud_remover(args.outFolder,args.Nuage_emprise,liste_des_noms,args.shp_path)
+    #print(liste_des_noms)
+    moy,sup,restants=Cloud_remover(args.outFolder,args.Nuage_emprise,liste_des_noms,args.shp_path)
+    concat(restants,args.outFolder)
     print('################')
     print("nombres d'images :",len(moy)+1)
     print("nombre d'images conservées:" , len(moy)-sup+1)
