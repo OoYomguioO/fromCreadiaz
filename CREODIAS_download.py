@@ -1,6 +1,20 @@
 # see https://creodias.eu/forum/-/message_boards/message/155867
+
 '''
-example: 
+dernière version : 'GH'
+exemple:
+
+python3 CREODIAS_download.py -o /home/dossierDeDepot -i /home/dossier/compteCREODIAS.txt -y 2019 -shp /home/dossier/shapefile.shp -ec 20
+
+effectu dans cet ordre:
+-selection cycle annuel
+-tri des image avec 100% de nuage
+-téléchargement es zip
+-trie des images avec nuage dans l'emprise (-ec     ->pour emprise couverture(nuageuse))
+-concaénation
+
+
+example initiale: 
 
 python3 CREODIAS_download.py -sat S2 
 			      -p L1C 
